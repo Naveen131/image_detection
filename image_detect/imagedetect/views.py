@@ -26,14 +26,14 @@ def convert_response(count):
     shelfinfo = {}
     for x in range(1, 5):
         shelf_name = "shelf_{}".format(x)
-        shelfinfo[shelf_name] = [{
+
+        shelfinfo[shelf_name] = {
             "PET 330 ML": random.randint(0, count),
             "GLASS 270ML STILL ": random.randint(0, count),
             "GLASS 270ML SPARKLING": random.randint(0, count),
             "PET 600ML": random.randint(0, count),
-            "GLASS 750ML": random.randint(0, count),
-
-        }]
+            "GLASS 750ML": random.randint(0, count)
+        }
 
     # Construct the final response in the desired format
     output_response = {
@@ -58,6 +58,6 @@ class CountObjectsView(CreateAPIView):
         box, label, count = cv.detect_common_objects(img)
         os.remove("temp_image.jpg")
 
-        data = convert_response(count)
+        data = convert_response(len(count))
 
         return Response({"message": "success", "status": 200,"data":data}, status=status.HTTP_200_OK)
