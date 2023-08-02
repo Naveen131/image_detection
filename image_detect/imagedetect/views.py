@@ -25,7 +25,8 @@ def convert_response(count):
     # Create the shelfinfo list with dictionaries representing each shelf
     shelfinfo = {}
     for x in range(1, 5):
-        shelfinfo['shelf_{}'.format(x)] = [{
+        shelf_name = "shelf_{}".format(x)
+        shelfinfo[shelf_name] = [{
             "PET 330 ML": random.randint(0, count),
             "GLASS 270ML STILL ": random.randint(0, count),
             "GLASS 270ML SPARKLING": random.randint(0, count),
