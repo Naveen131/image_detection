@@ -69,7 +69,7 @@ def upload_file_to_s3(base64_data, object_name):
 
 
 def draw_bounding_boxes(bucket, photo, response):
-    s3 = boto3.client('s3')
+    s3 = boto3.client('s3', aws_access_key_id='AKIA5MU5LBBEOBOA2HCQ', aws_secret_access_key='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',region_name='ap-south-1')
     img = s3.get_object(Bucket=bucket, Key=photo)
     image_bytes = img['Body'].read()
     image = Image.open(io.BytesIO(image_bytes))
@@ -96,7 +96,8 @@ def convert_to_base64(image):
 
 def display_image(bucket, photo, response):
     # Load image from S3 bucket
-    s3_connection = boto3.resource('s3')
+    s3_connection = boto3.resource('s3', aws_access_key_id='AKIA5MU5LBBEOBOA2HCQ',
+                                   aws_secret_access_key='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',region_name='ap-south-1')
 
     s3_object = s3_connection.Object(bucket, photo)
     s3_response = s3_object.get()
