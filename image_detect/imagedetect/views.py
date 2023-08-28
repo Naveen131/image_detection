@@ -141,7 +141,7 @@ def display_image(bucket, photo, response):
 
 def show_custom_labels(model, bucket, photo, min_confidence):
 
-        client = boto3.client('rekognition')
+        client = boto3.client('rekognition', aws_access_key_id='AKIA5MU5LBBEOBOA2HCQ', aws_secret_access_key='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',region_name='ap-south-1' )
 
         # Call DetectCustomLabels
         response = client.detect_custom_labels(Image={'S3Object': {'Bucket': bucket, 'Name': photo}},
