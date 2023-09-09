@@ -127,7 +127,7 @@ def display_image(bucket, photo, response):
             width = imgWidth * box['Width']
             height = imgHeight * box['Height']
 
-            fnt = ImageFont.truetype('/Library/Fonts/Arial.ttf', 20)
+            fnt = ImageFont.load_default()
             draw.text((left, top), customLabel['Name'], fill='#00d400', font=fnt)
 
             print('Left: ' + '{0:.0f}'.format(left))
