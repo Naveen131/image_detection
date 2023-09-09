@@ -15,6 +15,16 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+from dotenv import load_dotenv
+
+import os
+environ = load_dotenv()
+
+aws_access_key_id = os.environ.get('AWS_ACCESS_KEY')
+aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
+bucket = os.environ.get('AWS_S3_BUCKET')
+region_name = os.environ.get('AWS_REGION')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/

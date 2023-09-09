@@ -1,8 +1,7 @@
 import base64
-import random
 
 from botocore.exceptions import ClientError
-from django.shortcuts import render
+
 from rest_framework.generics import CreateAPIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -12,8 +11,12 @@ import boto3
 import io
 from PIL import Image, ImageDraw, ExifTags, ImageColor, ImageFont
 
+from image_detect import settings
+
 
 def process_custom_labels(response, num_shelves):
+    formatted_data = {}
+
     shelf_labels = {}  # Dictionary to store labels inside each shelf
     for customLabel in response['CustomLabels']:
         label_name = customLabel['Name']
@@ -39,7 +42,6 @@ def process_custom_labels(response, num_shelves):
             else:
                 shelf_labels[shelf_index][label_name] = 1
 
-        formatted_data ={}
         for shelf_number, labels in shelf_labels.items():
             # Sort labels by count in descending order
             sorted_labels = sorted(labels.items(), key=lambda x: x[1], reverse=True)
@@ -56,20 +58,23 @@ def find_number_of_shelves(response):
     return num_shelves
 
 def upload_file_to_s3(base64_data, object_name):
-    # import pdb;pdb.set_trace()
     image_data = base64.b64decode(base64_data)
 
-    s3_client = boto3.client('s3', aws_access_key_id='AKIA5MU5LBBEOBOA2HCQ', aws_secret_access_key='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',region_name='ap-south-1' )
+    s3_client = boto3.client('s3', aws_access_key_id=settings.aws_access_key_id,
+                             aws_secret_access_key=settings.aws_secret_access_key,
+                             region_name=settings.region_name )
     try:
-        response = s3_client.put_object(Body=image_data, Bucket='analyse-invoice', Key=object_name, ACL='public-read')
-        s3_url = f"https://analyse-invoice.s3.ap-south-1.amazonaws.com/{object_name}"
+        response = s3_client.put_object(Body=image_data, Bucket=settings.bucket, Key=object_name)
+        s3_url = f"https://berain-detection.s3.ap-south-1.amazonaws.com/{object_name}"
         return s3_url
     except ClientError as e:
         print("Error:", e)
 
 
 def draw_bounding_boxes(bucket, photo, response):
-    s3 = boto3.client('s3', aws_access_key_id='AKIA5MU5LBBEOBOA2HCQ', aws_secret_access_key='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',region_name='ap-south-1')
+    s3 = boto3.client('s3', aws_access_key_id=settings.aws_access_key_id,
+                      aws_secret_access_key=settings.aws_secret_access_key,
+                      region_name=settings.region_name )
     img = s3.get_object(Bucket=bucket, Key=photo)
     image_bytes = img['Body'].read()
     image = Image.open(io.BytesIO(image_bytes))
@@ -96,8 +101,9 @@ def convert_to_base64(image):
 
 def display_image(bucket, photo, response):
     # Load image from S3 bucket
-    s3_connection = boto3.resource('s3', aws_access_key_id='AKIA5MU5LBBEOBOA2HCQ',
-                                   aws_secret_access_key='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',region_name='ap-south-1')
+    s3_connection = boto3.resource('s3', aws_access_key_id=settings.aws_access_key_id,
+                                   aws_secret_access_key=settings.aws_secret_access_key,
+                                   region_name=settings.region_name )
 
     s3_object = s3_connection.Object(bucket, photo)
     s3_response = s3_object.get()
@@ -137,17 +143,35 @@ def display_image(bucket, photo, response):
                 (left, top))
             draw.line(points, fill='#00d400', width=5)
 
-    image.show()
+    # image.show()
+
+    buffered = io.BytesIO()
+    image.save(buffered, format='JPEG')
+    base64_image = base64.b64encode(buffered.getvalue()).decode()
+
+    return base64_image
 
 
-def show_custom_labels(model, bucket, photo, min_confidence):
+def show_custom_labels(model, bucket, photo, min_confidence, base64_data):
+        # import pdb;pdb.set_trace()
 
-        client = boto3.client('rekognition', aws_access_key_id='AKIA5MU5LBBEOBOA2HCQ', aws_secret_access_key='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',region_name='ap-south-1' )
+        client = boto3.client('rekognition', aws_access_key_id=settings.aws_access_key_id,
+                      aws_secret_access_key=settings.aws_secret_access_key,
+                      region_name=settings.region_name )
 
-        # Call DetectCustomLabels
-        response = client.detect_custom_labels(Image={'S3Object': {'Bucket': bucket, 'Name': photo}},
-                                               MinConfidence=min_confidence,
-                                               ProjectVersionArn=model)
+
+
+        image_bytes = base64.b64decode(base64_data)
+
+        # Make the DetectLabels API request
+        response = client.detect_custom_labels(
+            Image={
+                "Bytes": image_bytes
+            },
+            MinConfidence=min_confidence,
+            ProjectVersionArn=model
+
+        )
 
         # import pdb;pdb.set_trace()
         num_shelves = find_number_of_shelves(response)
@@ -155,15 +179,8 @@ def show_custom_labels(model, bucket, photo, min_confidence):
         # Process custom labels and count occurrences within shelves
         shelf_labels  = process_custom_labels(response, num_shelves)
         # # For object detection use case, uncomment below code to display image.
-        # image = display_image(bucket,photo,response)
-        # shelf_labels['image'] = base64.b64encode(image).decode("utf-8")
-
-        image_with_bboxes = draw_bounding_boxes(bucket, photo, response)
-
-        # Convert the image to base64
-        base64_encoded_image = convert_to_base64(image_with_bboxes)
-
-        shelf_labels['image'] = base64_encoded_image
+        # display_image(bucket,photo,response)
+        shelf_labels['image'] = display_image(bucket,photo,response)
 
         return shelf_labels
 
@@ -191,80 +208,80 @@ def start_model(project_arn, model_arn, version_name, min_inference_units):
     print('Done...')
 
 
-# Create your views here.
-
-# def convert_response(count):
-#     # Define the products/categories based on the provided shelf configuration
-#     products = {
-#         "PET 330 ML": "categ_1",
-#         "GLASS 270ML STILL SPARKLING": "categ_2",
-#         # Add more product-category mappings here as needed
-#     }
-#
-#     # Create the shelfinfo list with dictionaries representing each shelf
-#     shelfinfo = {}
-#     for x in range(1, 5):
-#         shelf_name = "shelf_{}".format(x)
-#
-#         shelfinfo[shelf_name] = {
-#             "PET 330 ML": random.randint(0, count),
-#             "GLASS 270ML STILL ": random.randint(0, count),
-#             "GLASS 270ML SPARKLING": random.randint(0, count),
-#             "PET 600ML": random.randint(0, count),
-#             "GLASS 750ML": random.randint(0, count)
-#         }
-#
-#     # Construct the final response in the desired format
-#     output_response = {
-#         "shelfinfo": shelfinfo,
-#     }
-#
-#     return output_response
-
-
-
 class CountObjectsView(CreateAPIView):
 
     def post(self, request, *args, **kwargs):
-        
         data = request.data
         img = data.get("image")
 
+        import datetime
+        photo = datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".jpeg"
 
+        print("==================", img.content_type)
 
-        file_content = img.read()
+        # import pdb;pdb.set_trace()
 
-        # Encode the file content as base64
-        base64_data = base64.b64encode(file_content).decode("utf-8")
+        image_bytes = img.read()
 
-        file_content = upload_file_to_s3(base64_data, img.name)
+        image_format = self.get_image_format(img.content_type)
 
-        # project_arn = 'arn:aws:rekognition:ap-south-1:920526719048:project/shelf_detection/1692858605176'
-        # model_arn = 'arn:aws:rekognition:ap-south-1:920526719048:project/shelf_detection/version/shelf_detection.2023-08-24T19.38.25/1692886099867'
-        # min_inference_units = 1
-        # version_name = 'shelf_detection.2023-08-24T19.38.25'
-        # start_model(project_arn, model_arn, version_name, min_inference_units)
+        if not image_format:
+            return Response({"message": "Invalid image format", "status": 400}, status=status.HTTP_400_BAD_REQUEST)
 
-        bucket = 'analyse-invoice'
-        photo = img.name
-        model = 'arn:aws:rekognition:ap-south-1:920526719048:project/shelf_detection/version/shelf_detection.2023-08-26T16.00.15/1693045814311'
-        min_confidence = 50
+        image_buffer = io.BytesIO(image_bytes)
 
+        # Open the image using PIL (Pillow) based on the detected format
+        img = Image.open(image_buffer)
 
-        label_count = show_custom_labels(model, bucket, photo, min_confidence)
-        print("Custom labels detected: " + str(label_count))
-        # with open("temp_image.jpg", "wb") as f:
-        #      f.write(model.read())
-        #
-        # img = cv2.imread("temp_image.jpg")
-        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # box, label, count = cv.detect_common_objects(img)
-        # os.remove("temp_image.jpg")
-        #
-        # data = convert_response(len(count))
-        #
+        # Resize the image if necessary
+        img = self.resize_image(img)
 
-        # display_image(bucket, photo, response)
+        # Convert the image to JPEG format (if it's not already)
+        if image_format != 'jpeg':
+            img = img.convert('RGB')
 
+        # Encode the image as base64
+        buffered = io.BytesIO()
+        img.save(buffered, format='JPEG')
+        base64_data = base64.b64encode(buffered.getvalue()).decode()
+
+        bucket = 'berain-detection'
+        # photo = img.name.replace(".png", ".jpeg")
+
+        model = 'arn:aws:rekognition:ap-south-1:864221354765:project/bottle/version/bottle.2023-09-05T20.36.45/1693926406125'
+        min_confidence = 42
+        upload_file_to_s3(base64_data, photo)
+        # Call the show_custom_labels function to get the label count
+        label_count = show_custom_labels(model, bucket, photo, min_confidence, base64_data)
+
+        # Construct the response
+        response_data = {
+            "message": "success",
+            "status": 200,
+            "data": {
+                "label_count": label_count
+            }
+        }
+
+        # return Response(response_data, status=status.HTTP_200_OK)
 
         return Response({"message": "success", "status": 200,"data":label_count}, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def get_image_format(content_type):
+        # Determine the image format based on the content type
+        if content_type == 'image/jpeg':
+            return 'jpeg'
+        elif content_type == 'image/png':
+            return 'png'
+        else:
+            return None
+
+    @staticmethod
+    def resize_image(img):
+        # Resize the image if needed (you can adjust the dimensions as required)
+        max_width, max_height = 4096, 4096
+        width, height = img.size
+        if width > max_width or height > max_height:
+            img.thumbnail((max_width, max_height), Image.LANCZOS)
+        return img
