@@ -14,12 +14,31 @@ from PIL import Image, ImageDraw, ExifTags, ImageColor, ImageFont
 from image_detect import settings
 
 
+def determine_shelf(label_top, shelf_labels, num_shelves):
+    # Calculate the height of each shelf segment based on the number of shelves
+    shelf_height = 1.0 / num_shelves
+
+    # Iterate through each potential shelf
+    for shelf_index in range(1, num_shelves + 1):
+        # Calculate the top and bottom boundaries of the shelf segment
+        shelf_top = (shelf_index - 1) * shelf_height
+        shelf_bottom = shelf_index * shelf_height
+
+        # Check if the label_top falls within the boundaries of the current shelf
+        if shelf_top <= label_top <= shelf_bottom:
+            return shelf_index
+
+    # If the label_top doesn't fall within any shelf, return None
+    return None
+
+
 def process_custom_labels(response, num_shelves):
     formatted_data = {}
+    shelves = {}
 
-    shelf_labels = {}  # Dictionary to store labels inside each shelf
     for customLabel in response['CustomLabels']:
         label_name = customLabel['Name']
+
         # Skip 'Shelf' label
         if label_name == 'Shelf':
             continue
@@ -30,24 +49,66 @@ def process_custom_labels(response, num_shelves):
             top = box['Top']
 
             # Determine which shelf this label belongs to
-            shelf_index = int(top * num_shelves) + 1
 
-            # Create shelf entry if it doesn't exist
-            if shelf_index not in shelf_labels:
-                shelf_labels[shelf_index] = {}
+            print("top ===================", top)
+            shelf_index = int(top * 6) + 1
 
-            # Count label occurrences within each shelf
-            if label_name in shelf_labels[shelf_index]:
-                shelf_labels[shelf_index][label_name] += 1
+            # Create a shelf entry if it doesn't exist
+            if shelf_index not in shelves:
+                shelves[shelf_index] = []
+
+            # Add label to the corresponding shelf
+            shelves[shelf_index].append(label_name)
+
+    # Format the data for each shelf
+    for shelf_number, labels in shelves.items():
+        # Sort labels by count in descending order
+        label_counts = {}
+        for label in labels:
+            if label in label_counts:
+                label_counts[label] += 1
             else:
-                shelf_labels[shelf_index][label_name] = 1
+                label_counts[label] = 1
 
-        for shelf_number, labels in shelf_labels.items():
-            # Sort labels by count in descending order
-            sorted_labels = sorted(labels.items(), key=lambda x: x[1], reverse=True)
-            formatted_data[f"shelf_{shelf_number}"] = {label: count for label, count in sorted_labels}
+        sorted_labels = sorted(label_counts.items(), key=lambda x: x[1], reverse=True)
+        formatted_data[f"shelf_{shelf_number}"] = {label: count for label, count in sorted_labels}
 
     return formatted_data
+
+    # print("shelfes are:", num_shelves)
+    # formatted_data = {}
+    # print("response", response)
+    # shelf_labels = {}  # Dictionary to store labels inside each shelf
+    # for customLabel in response['CustomLabels']:
+    #     label_name = customLabel['Name']
+    #     # Skip 'Shelf' label
+    #     if label_name == 'Shelf':
+    #         continue
+    #
+    #     if 'Geometry' in customLabel:
+    #         box = customLabel['Geometry']['BoundingBox']
+    #         left = box['Left']
+    #         top = box['Top']
+    #
+    #         # Determine which shelf this label belongs to
+    #         shelf_index = int(top * num_shelves) + 1
+    #
+    #         # Create shelf entry if it doesn't exist
+    #         if shelf_index not in shelf_labels:
+    #             shelf_labels[shelf_index] = {}
+    #
+    #         # Count label occurrences within each shelf
+    #         if label_name in shelf_labels[shelf_index]:
+    #             shelf_labels[shelf_index][label_name] += 1
+    #         else:
+    #             shelf_labels[shelf_index][label_name] = 1
+    #
+    #     for shelf_number, labels in shelf_labels.items():
+    #         # Sort labels by count in descending order
+    #         sorted_labels = sorted(labels.items(), key=lambda x: x[1], reverse=True)
+    #         formatted_data[f"shelf_{shelf_number}"] = {label: count for label, count in sorted_labels}
+    #
+    # return formatted_data
 
 def find_number_of_shelves(response):
     num_shelves = 0
@@ -118,8 +179,8 @@ def display_image(bucket, photo, response):
     # calculate and display bounding boxes for each detected custom label
     print('Detected custom labels for ' + photo)
     for customLabel in response['CustomLabels']:
-        print('Label ' + str(customLabel['Name']))
-        print('Confidence ' + str(customLabel['Confidence']))
+        # print('Label ' + str(customLabel['Name']))
+        # print('Confidence ' + str(customLabel['Confidence']))
         if 'Geometry' in customLabel:
             box = customLabel['Geometry']['BoundingBox']
             left = imgWidth * box['Left']
@@ -130,10 +191,10 @@ def display_image(bucket, photo, response):
             fnt = ImageFont.load_default()
             draw.text((left, top), customLabel['Name'], fill='#00d400', font=fnt)
 
-            print('Left: ' + '{0:.0f}'.format(left))
-            print('Top: ' + '{0:.0f}'.format(top))
-            print('Label Width: ' + "{0:.0f}".format(width))
-            print('Label Height: ' + "{0:.0f}".format(height))
+            # print('Left: ' + '{0:.0f}'.format(left))
+            # print('Top: ' + '{0:.0f}'.format(top))
+            # print('Label Width: ' + "{0:.0f}".format(width))
+            # print('Label Height: ' + "{0:.0f}".format(height))
 
             points = (
                 (left, top),
@@ -248,8 +309,8 @@ class CountObjectsView(CreateAPIView):
         bucket = 'berain-detection'
         # photo = img.name.replace(".png", ".jpeg")
 
-        model = 'arn:aws:rekognition:ap-south-1:864221354765:project/bottle/version/bottle.2023-09-05T20.36.45/1693926406125'
-        min_confidence = 42
+        model = 'arn:aws:rekognition:ap-south-1:864221354765:project/bottle/version/bottle.2023-09-21T20.10.59/1695307257891'
+        min_confidence = 50
         upload_file_to_s3(base64_data, photo)
         # Call the show_custom_labels function to get the label count
         label_count = show_custom_labels(model, bucket, photo, min_confidence, base64_data)
