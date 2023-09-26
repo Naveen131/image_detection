@@ -310,7 +310,7 @@ class CountObjectsView(CreateAPIView):
         # photo = img.name.replace(".png", ".jpeg")
 
         model = 'arn:aws:rekognition:ap-south-1:864221354765:project/bottle/version/bottle.2023-09-21T20.10.59/1695307257891'
-        min_confidence = 50
+        min_confidence = 45
         upload_file_to_s3(base64_data, photo)
         # Call the show_custom_labels function to get the label count
         label_count = show_custom_labels(model, bucket, photo, min_confidence, base64_data)
