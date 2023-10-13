@@ -33,12 +33,15 @@ def determine_shelf(label_top, shelf_labels, num_shelves):
 
 
 def process_custom_labels(response, num_shelves):
-    formatted_data = {}
-    shelves = {}
 
+
+    print("shelfes are:", num_shelves)
+    formatted_data = {}
+    print("response", response)
+    shelf_labels = {}  # Dictionary to store labels inside each shelf
+    # import pdb;pdb.set_trace()
     for customLabel in response['CustomLabels']:
         label_name = customLabel['Name']
-
         # Skip 'Shelf' label
         if label_name == 'Shelf':
             continue
@@ -49,66 +52,30 @@ def process_custom_labels(response, num_shelves):
             top = box['Top']
 
             # Determine which shelf this label belongs to
+            shelf_index = round(top * num_shelves)
 
-            print("top ===================", top)
-            shelf_index = int(top * 6) + 1
+            print("shelf_index", shelf_index)
+            # Create shelf entry if it doesn't exist
+            if shelf_index not in shelf_labels:
+                shelf_labels[shelf_index] = {}
 
-            # Create a shelf entry if it doesn't exist
-            if shelf_index not in shelves:
-                shelves[shelf_index] = []
-
-            # Add label to the corresponding shelf
-            shelves[shelf_index].append(label_name)
-
-    # Format the data for each shelf
-    for shelf_number, labels in shelves.items():
-        # Sort labels by count in descending order
-        label_counts = {}
-        for label in labels:
-            if label in label_counts:
-                label_counts[label] += 1
+            # Count label occurrences within each shelf
+            if label_name in shelf_labels[shelf_index]:
+                shelf_labels[shelf_index][label_name] += 1
             else:
-                label_counts[label] = 1
+                shelf_labels[shelf_index][label_name] = 1
 
-        sorted_labels = sorted(label_counts.items(), key=lambda x: x[1], reverse=True)
-        formatted_data[f"shelf_{shelf_number}"] = {label: count for label, count in sorted_labels}
+        for shelf_number, labels in shelf_labels.items():
+            # Sort labels by count in descending order
+            sorted_labels = sorted(labels.items(), key=lambda x: x[1], reverse=True)
+            formatted_data[f"shelf_{shelf_number}"] = {label: count for label, count in sorted_labels}
+
+            # Include the last shelf
+        # last_shelf_labels = shelf_labels[num_shelves-1]
+        # sorted_labels = sorted(last_shelf_labels.items(), key=lambda x: x[1], reverse=True)
+        # formatted_data[f"shelf_{num_shelves}"] = {label: count for label, count in sorted_labels}
 
     return formatted_data
-
-    # print("shelfes are:", num_shelves)
-    # formatted_data = {}
-    # print("response", response)
-    # shelf_labels = {}  # Dictionary to store labels inside each shelf
-    # for customLabel in response['CustomLabels']:
-    #     label_name = customLabel['Name']
-    #     # Skip 'Shelf' label
-    #     if label_name == 'Shelf':
-    #         continue
-    #
-    #     if 'Geometry' in customLabel:
-    #         box = customLabel['Geometry']['BoundingBox']
-    #         left = box['Left']
-    #         top = box['Top']
-    #
-    #         # Determine which shelf this label belongs to
-    #         shelf_index = int(top * num_shelves) + 1
-    #
-    #         # Create shelf entry if it doesn't exist
-    #         if shelf_index not in shelf_labels:
-    #             shelf_labels[shelf_index] = {}
-    #
-    #         # Count label occurrences within each shelf
-    #         if label_name in shelf_labels[shelf_index]:
-    #             shelf_labels[shelf_index][label_name] += 1
-    #         else:
-    #             shelf_labels[shelf_index][label_name] = 1
-    #
-    #     for shelf_number, labels in shelf_labels.items():
-    #         # Sort labels by count in descending order
-    #         sorted_labels = sorted(labels.items(), key=lambda x: x[1], reverse=True)
-    #         formatted_data[f"shelf_{shelf_number}"] = {label: count for label, count in sorted_labels}
-    #
-    # return formatted_data
 
 def find_number_of_shelves(response):
     num_shelves = 0
@@ -213,6 +180,56 @@ def display_image(bucket, photo, response):
     return base64_image
 
 
+def count_labels_inside_shelves(response):
+    shelf_counts = {}
+    shelf_counter = 1  # Initialize a counter for naming the shelves
+
+    for label in response['CustomLabels']:
+        if label['Name'].startswith('Shelf') and 'Geometry' in label:
+            shelf_name = f'shelf_{shelf_counter}'  # Name the shelf
+            shelf_counter += 1  # Increment the counter
+
+            shelf_box = label['Geometry']['BoundingBox']
+            shelf_left = shelf_box['Left']
+            shelf_top = shelf_box['Top']
+            shelf_width = shelf_box['Width']
+            shelf_height = shelf_box['Height']
+
+            labels_inside_shelf = {}
+
+            for other_label in response['CustomLabels']:
+
+                other_label_name = other_label['Name']
+                if 'Geometry' in other_label:
+                    other_label_box = other_label['Geometry']['BoundingBox']
+                    other_label_left = other_label_box['Left']
+                    other_label_top = other_label_box['Top']
+
+                    # Check if the label is inside the shelf
+                    if (shelf_left <= other_label_left <= (shelf_left + shelf_width) and
+                        shelf_top <= other_label_top <= (shelf_top + shelf_height)):
+                        if other_label_name in labels_inside_shelf:
+                            labels_inside_shelf[other_label_name] += 1
+                        else:
+                            labels_inside_shelf[other_label_name] = 1
+
+            shelf_counts[shelf_name] = labels_inside_shelf
+
+
+            output_data = {}
+            for shelf_name, shelf_data in shelf_counts.items():
+                # Remove 'Shelf' from the shelf's dictionary
+                cleaned_shelf_data = {key: value for key, value in shelf_data.items() if key != "Shelf"}
+                output_data[shelf_name] = cleaned_shelf_data
+
+            new_response = {
+                f"shelf_{6 - int(key.split('_')[1])}": value
+                for key, value in output_data.items()
+            }
+
+    return new_response
+        
+
 def show_custom_labels(model, bucket, photo, min_confidence, base64_data):
         # import pdb;pdb.set_trace()
 
@@ -235,10 +252,11 @@ def show_custom_labels(model, bucket, photo, min_confidence, base64_data):
         )
 
         # import pdb;pdb.set_trace()
+        print(response)
         num_shelves = find_number_of_shelves(response)
 
         # Process custom labels and count occurrences within shelves
-        shelf_labels  = process_custom_labels(response, num_shelves)
+        shelf_labels  = count_labels_inside_shelves(response)
         # # For object detection use case, uncomment below code to display image.
         # display_image(bucket,photo,response)
         shelf_labels['image'] = display_image(bucket,photo,response)
@@ -309,22 +327,26 @@ class CountObjectsView(CreateAPIView):
         bucket = 'berain-detection'
         # photo = img.name.replace(".png", ".jpeg")
 
-        model = 'arn:aws:rekognition:ap-south-1:864221354765:project/bottle/version/bottle.2023-09-21T20.10.59/1695307257891'
-        min_confidence = 45
+        model = 'arn:aws:rekognition:ap-south-1:864221354765:project/bottle/version/bottle.2023-10-12T13.21.10/1697097066154'
+        min_confidence = 50
         upload_file_to_s3(base64_data, photo)
         # Call the show_custom_labels function to get the label count
         label_count = show_custom_labels(model, bucket, photo, min_confidence, base64_data)
 
         # Construct the response
-        response_data = {
-            "message": "success",
-            "status": 200,
-            "data": {
-                "label_count": label_count
-            }
-        }
+        # response_data = {
+        #     "message": "success",
+        #     "status": 200,
+        #     "data": {
+        #         "label_count": label_count
+        #     }
+        # }
+        # reversed_response = {
+        #     "message": "success",
+        #     "status": 200,
+        #     "data": {}
+        # }
 
-        # return Response(response_data, status=status.HTTP_200_OK)
 
         return Response({"message": "success", "status": 200,"data":label_count}, status=status.HTTP_200_OK)
 
